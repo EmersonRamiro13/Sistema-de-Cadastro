@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catálogo de Peças 3D</title>
+<style>
+body{margin:0;background:#f7f7f5;color:#1d1d1b;font:16px system-ui,sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px}
+.card{background:#fff;border:1px solid #dcdcd6;border-radius:12px;padding:16px;margin-bottom:14px}
+button,label.b{background:#0f6e56;color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;cursor:pointer;display:inline-block}
+button.g{background:#fff;color:#1d1d1b;border:1px solid #dcdcd6}button:disabled{opacity:.5}
+input,textarea{width:100%;padding:9px;border:1px solid #dcdcd6;border-radius:8px;font:inherit;margin-bottom:8px}
+small{color:#6b6b66}#prev{max-width:100%;max-height:260px;border-radius:8px;display:none;margin:10px 0}
+#st{margin:8px 0;min-height:1.3em;color:#6b6b66}
+</style></head><body><main>
+<h1>Catálogo de Peças 3D</h1>
+
+<div class="card">
+  <small>URL do app web (Apps Script)</small><input id="url" placeholder="https://script.google.com/macros/s/.../exec">
+  <small>Senha (APP_TOKEN)</small><input id="tok" type="password">
+  <button class="g" id="cfg">Guardar neste aparelho</button>
+</div>
+
+<div class="card">
+  <label class="b" for="f">📷 Tirar / escolher foto</label>
+  <input id="f" type="file" accept="image/*" hidden>
+  <img id="prev" alt="">
+  <div id="st"></div>
+  <div id="form" style="display:none">
+    <small>Nome</small><input id="nome">
+    <small>Peso (g)</small><input id="peso" type="number" step="0.01">
+    <small>Material / cor</small><input id="mat">
+    <small>Descrição</small><textarea id="desc" rows="2"></textarea>
+    <small>Data</small><input id="data" readonly>
+    <button id="save">Salvar na planilha</button>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let foto=null;
+$('url').value=localStorage.getItem('url')||'';$('tok').value=localStorage.getItem('tok')||'';
+$('cfg').onclick=()=>{localStorage.setItem('url',$('url').value.trim());localStorage.setItem('tok',$('tok').value);$('st').textContent='Configuração guardada.'};
+
+async function api(payload){
+  // text/plain evita o preflight de CORS, que o Apps Script não responde
+  const r=await fetch($('url').value.trim(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({token:$('tok').value,...payload})});
+  const j=await r.json();if(j.erro)throw new Error(j.erro);return j;
+}
+function reduzir(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),i=new Image();
+  i.onload=()=>{const k=Math.min(1,1280/Math.max(i.width,i.height)),c=document.createElement('canvas');
+    c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);URL.revokeObjectURL(u);ok(c.toDataURL('image/jpeg',.85))};
+  i.onerror=no;i.src=u})}
+
+$('f').onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  if(!$('url').value||!$('tok').value){$('st').textContent='Preencha a URL e a senha acima.';return}
+  foto=await reduzir(file);$('prev').src=foto;$('prev').style.display='block';
+  const d=new Date();$('data').value=d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  ['nome','peso','mat','desc'].forEach(k=>$(k).value='');$('form').style.display='block';
+  $('st').textContent='Analisando a foto com IA…';
+  try{
+    const r=await api({acao:'analisar',foto});
+    $('nome').value=r.nome||'';$('peso').value=r.peso_g==null?'':r.peso_g;$('mat').value=r.material_cor||'';$('desc').value=r.descricao||'';
+    $('st').textContent=r.peso_g==null?'Peso ilegível: digite manualmente e confira.':'Confira os dados antes de salvar.';
+  }catch(x){$('st').textContent='Erro na análise: '+x.message+' (preencha manualmente se quiser).'}
+};
+
+$('save').onclick=async()=>{
+  if(!$('nome').value.trim()){$('st').textContent='Informe o nome.';return}
+  $('save').disabled=true;$('st').textContent='Salvando…';
+  try{
+    await api({acao:'salvar',dados:{foto,nome:$('nome').value.trim(),peso:$('peso').value,material:$('mat').value,descricao:$('desc').value,data:$('data').value}});
+    $('st').textContent='Salvo na planilha ✔';$('form').style.display='none';$('prev').style.display='none';$('f').value='';
+  }catch(x){$('st').textContent='Erro ao salvar: '+x.message}
+  $('save').disabled=false;
+};
+</script></main></body></html>
